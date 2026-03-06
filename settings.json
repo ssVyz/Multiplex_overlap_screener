@@ -1,10 +1,10 @@
 {
     "min_overlap": 3,
-    "max_overlap": 10,
+    "max_overlap": 15,
     "max_mismatches": 1,
-    "consider_ambiguity": false,
+    "consider_ambiguity": true,
     "high_risk_min_overlap": 4,
     "high_risk_max_mismatches": 0,
-    "medium_risk_min_overlap": 2,
+    "medium_risk_min_overlap": 4,
     "medium_risk_max_mismatches": 1
 }
