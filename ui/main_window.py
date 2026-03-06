@@ -53,19 +53,19 @@ class MainWindow(QMainWindow):
             self._run_analysis()
 
     def _run_analysis(self):
-        sequences = self.oligo_panel.get_sequences()
-        self._analysis_results = analyze_mix(sequences, self._settings)
+        active_sequences = self.oligo_panel.get_active_sequences()
+        self._analysis_results = analyze_mix(active_sequences, self._settings)
 
-        # Update risk highlights on the oligo list
+        # Update risk highlights on the oligo list (only active oligos get risk)
         risk_map = {}
-        for seq in sequences:
+        for seq in active_sequences:
             risk_map[seq.id] = get_max_risk_for_oligo(seq.id, self._analysis_results)
         self.oligo_panel.update_risk_highlights(risk_map)
 
         # Refresh detail panel if an oligo is selected
         current = self.oligo_panel.list_widget.currentItem()
         if current:
-            self._on_oligo_selected(current.data(1))
+            self._on_oligo_selected(current.data(Qt.ItemDataRole.UserRole))
         else:
             self.detail_panel.clear()
 
