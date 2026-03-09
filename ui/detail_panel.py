@@ -7,7 +7,7 @@ from PySide6.QtGui import QColor, QFont
 
 
 class DetailPanel(QWidget):
-    """Right panel: shows interactions for the selected oligo."""
+    """Right panel: shows interactions (top) and overlap visualization (bottom)."""
 
     RISK_COLORS = {
         "HIGH": QColor(255, 120, 120, 90),
@@ -17,18 +17,23 @@ class DetailPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._interactions = []
+        self._current_oligo_id = None
         self._build_ui()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        self.title_label = QLabel("Select an oligo to view interactions")
-        layout.addWidget(self.title_label)
-
         splitter = QSplitter(Qt.Vertical)
 
-        # Interaction table
+        # Top: interaction table
+        top_widget = QWidget()
+        top_layout = QVBoxLayout(top_widget)
+        top_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.title_label = QLabel("Select an oligo to view interactions")
+        top_layout.addWidget(self.title_label)
+
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["Partner", "Overlap", "Mismatches", "Risk"])
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -40,29 +45,47 @@ class DetailPanel(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.table.currentCellChanged.connect(self._on_row_selected)
-        splitter.addWidget(self.table)
+        top_layout.addWidget(self.table)
+        splitter.addWidget(top_widget)
 
-        # Visualization area
+        # Bottom: visualization
+        bottom_widget = QWidget()
+        bottom_layout = QVBoxLayout(bottom_widget)
+        bottom_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.viz_label = QLabel("Overlap Visualization")
+        self.viz_label.setStyleSheet("font-weight: bold;")
+        bottom_layout.addWidget(self.viz_label)
+
         self.viz_text = QTextEdit()
         self.viz_text.setReadOnly(True)
         self.viz_text.setFont(QFont("Courier New", 10))
-        splitter.addWidget(self.viz_text)
+        bottom_layout.addWidget(self.viz_text)
+        splitter.addWidget(bottom_widget)
 
         splitter.setStretchFactor(0, 2)
         splitter.setStretchFactor(1, 1)
         layout.addWidget(splitter)
 
-    def show_interactions(self, oligo_id, interactions):
+    def show_interactions(self, oligo_id, oligo_name, interactions):
         """Populate the table with interactions for the given oligo."""
         self._interactions = interactions
-        self.title_label.setText(f"Interactions for: {oligo_id}" if oligo_id else "Select an oligo to view interactions")
+        self._current_oligo_id = oligo_id
+        self.title_label.setText(
+            f"Interactions for: {oligo_name}" if oligo_name
+            else "Select an oligo to view interactions"
+        )
         self.viz_text.clear()
 
         self.table.setRowCount(len(interactions))
         for row, r in enumerate(interactions):
-            partner = r["primer2_id"] if r["primer1_id"] == oligo_id else r["primer1_id"]
+            # Determine partner name
             if r["primer1_id"] == oligo_id and r["primer2_id"] == oligo_id:
-                partner = f"{oligo_id} (self-dimer)"
+                partner = f"{r['primer1_name']} (self-dimer)"
+            elif r["primer1_id"] == oligo_id:
+                partner = r["primer2_name"]
+            else:
+                partner = r["primer1_name"]
 
             items = [
                 QTableWidgetItem(partner),
@@ -81,6 +104,7 @@ class DetailPanel(QWidget):
         self.table.setRowCount(0)
         self.viz_text.clear()
         self._interactions = []
+        self._current_oligo_id = None
         self.title_label.setText("Select an oligo to view interactions")
 
     def _on_row_selected(self, row, _col, _prev_row, _prev_col):

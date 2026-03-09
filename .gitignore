@@ -1,3 +1,5 @@
 .claude/
 reference_program/
 *.md
+__pycache__
+workspace.xml
