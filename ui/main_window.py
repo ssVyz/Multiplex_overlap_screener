@@ -2,6 +2,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QSplitter, QFileDialog, QMessageBox,
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QCloseEvent
 
 from core.settings import load_settings, save_settings
 from core.analysis import analyze_mix, get_interactions_for_oligo, get_max_risk_for_oligo
@@ -22,6 +23,7 @@ class MainWindow(QMainWindow):
         self._project = Project()
         self._project_path = None
         self._analysis_cache = {}  # mix_id -> results list
+        self._dirty = False
 
         self._build_menu()
         self._build_ui()
@@ -94,6 +96,7 @@ class MainWindow(QMainWindow):
         self._project = Project()
         self._project_path = None
         self._analysis_cache.clear()
+        self._dirty = False
         self.oligo_tree.set_project(self._project)
         self.oligo_preview.clear()
         self.detail_panel.clear()
@@ -109,10 +112,12 @@ class MainWindow(QMainWindow):
                 self._project = Project.load(path)
                 self._project_path = path
                 self._analysis_cache.clear()
+                self._dirty = False
                 self.oligo_tree.set_project(self._project)
                 self.oligo_preview.clear()
                 self.detail_panel.clear()
                 self.setWindowTitle(f"Overlap Screener — {path}")
+                self._refresh_current_view()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to load project:\n{e}")
 
@@ -120,6 +125,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, '_project_path') and self._project_path:
             try:
                 self._project.save(self._project_path)
+                self._dirty = False
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save:\n{e}")
         else:
@@ -134,6 +140,7 @@ class MainWindow(QMainWindow):
             try:
                 self._project.save(path)
                 self._project_path = path
+                self._dirty = False
                 self.setWindowTitle(f"Overlap Screener — {path}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save:\n{e}")
@@ -157,6 +164,7 @@ class MainWindow(QMainWindow):
 
     def _on_project_changed(self):
         """Called when oligos are added/removed/moved/edited."""
+        self._dirty = True
         self._analysis_cache.clear()
         self._refresh_current_view()
 
@@ -216,3 +224,17 @@ class MainWindow(QMainWindow):
             self.detail_panel.show_interactions(oligo.id, oligo.name, interactions)
         else:
             self.detail_panel.clear()
+
+    # ---- window close ----
+
+    def closeEvent(self, event: QCloseEvent):
+        if self._dirty:
+            reply = QMessageBox.question(
+                self, "Unsaved Changes",
+                "You have unsaved changes. Are you sure you want to exit?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                event.ignore()
+                return
+        event.accept()
