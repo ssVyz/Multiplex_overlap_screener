@@ -12,6 +12,7 @@ DEFAULTS = {
     "high_risk_max_mismatches": 0,
     "medium_risk_min_overlap": 2,
     "medium_risk_max_mismatches": 1,
+    "na_concentration": 50.0,
 }
 
 

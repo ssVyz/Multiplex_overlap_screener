@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QSpinBox, QCheckBox, QGroupBox, QDialogButtonBox, QLabel,
+    QSpinBox, QDoubleSpinBox, QCheckBox, QGroupBox, QDialogButtonBox, QLabel,
 )
 
 
@@ -37,6 +37,13 @@ class SettingsDialog(QDialog):
         self.ambiguity_check = QCheckBox("Treat ambiguous bases as matches if any variation could match")
         self.ambiguity_check.setChecked(self._settings.get("consider_ambiguity", False))
         form.addRow(self.ambiguity_check)
+
+        self.na_conc_spin = QDoubleSpinBox()
+        self.na_conc_spin.setRange(1.0, 1000.0)
+        self.na_conc_spin.setDecimals(1)
+        self.na_conc_spin.setSuffix(" mM")
+        self.na_conc_spin.setValue(self._settings.get("na_concentration", 50.0))
+        form.addRow("Na\u207a concentration:", self.na_conc_spin)
 
         analysis_group.setLayout(form)
         layout.addWidget(analysis_group)
@@ -89,4 +96,5 @@ class SettingsDialog(QDialog):
             "high_risk_max_mismatches": self.high_max_mm_spin.value(),
             "medium_risk_min_overlap": self.med_min_ol_spin.value(),
             "medium_risk_max_mismatches": self.med_max_mm_spin.value(),
+            "na_concentration": self.na_conc_spin.value(),
         }

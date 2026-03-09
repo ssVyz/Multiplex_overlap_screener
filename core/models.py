@@ -1,4 +1,5 @@
 import json
+import math
 import uuid
 from dataclasses import dataclass, field
 
@@ -41,6 +42,19 @@ class Oligo:
             return 0.0
         gc = sum(1 for b in seq if b in ("G", "C"))
         return gc / len(seq) * 100
+
+    def calc_tm(self, na_mM: float = 50.0) -> float:
+        """Estimate Tm using the GC%-based formula (non-nearest-neighbor).
+
+        Tm = 81.5 + 16.6 * log10([Na+]) + 0.41 * GC% - 600 / length
+        """
+        seq = self.sequence.upper().replace("U", "T")
+        n = len(seq)
+        if n == 0:
+            return 0.0
+        gc_percent = self.gc_content()
+        salt_M = na_mM / 1000.0
+        return 81.5 + 16.6 * math.log10(salt_M) + 0.41 * gc_percent - 600.0 / n
 
 
 @dataclass

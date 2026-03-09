@@ -28,6 +28,7 @@ class MainWindow(QMainWindow):
         self._build_menu()
         self._build_ui()
         self._connect_signals()
+        self.oligo_preview.set_settings(self._settings)
 
     def _build_menu(self):
         menu_bar = self.menuBar()
@@ -79,6 +80,7 @@ class MainWindow(QMainWindow):
         if dlg.exec():
             self._settings = dlg.get_settings()
             save_settings(self._settings)
+            self.oligo_preview.set_settings(self._settings)
             self._analysis_cache.clear()
             self._refresh_current_view()
 

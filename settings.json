@@ -6,5 +6,6 @@
     "high_risk_min_overlap": 4,
     "high_risk_max_mismatches": 0,
     "medium_risk_min_overlap": 4,
-    "medium_risk_max_mismatches": 1
+    "medium_risk_max_mismatches": 1,
+    "na_concentration": 150.0
 }

@@ -48,13 +48,19 @@ class OligoPreview(QWidget):
 
         layout.addStretch()
 
+    def set_settings(self, settings: dict):
+        """Update settings used for Tm calculation."""
+        self._na_concentration = settings.get("na_concentration", 50.0)
+
     def show_oligo(self, oligo, mix_name=None):
         """Display details for the given Oligo object."""
         self.title_label.setText(f"Oligo Preview: {oligo.name}")
         self.name_label.setText(oligo.name)
         self.length_label.setText(f"{len(oligo.sequence)} bp")
         self.gc_label.setText(f"{oligo.gc_content():.1f}%")
-        self.tm_label.setText("—")  # placeholder for future Tm calculation
+        na_mM = getattr(self, "_na_concentration", 50.0)
+        tm = oligo.calc_tm(na_mM)
+        self.tm_label.setText(f"{tm:.1f} \u00b0C")
         self.status_label.setText("Active" if oligo.active else "Inactive")
         self.mix_label.setText(mix_name if mix_name else "Unallocated")
         self.seq_display.setPlainText(oligo.sequence)
