@@ -314,6 +314,9 @@ class OligoTree(QWidget):
             self.refresh()
             self.project_changed.emit()
 
+        # Use CopyAction so Qt's drag machinery doesn't try to remove
+        # the (already rebuilt) source items after our manual refresh.
+        event.setDropAction(Qt.CopyAction)
         event.accept()
 
     # ---- context menus ----
