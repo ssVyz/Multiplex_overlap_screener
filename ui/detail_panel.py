@@ -100,6 +100,11 @@ class DetailPanel(QWidget):
                     item.setBackground(color)
                 self.table.setItem(row, col, item)
 
+        # Auto-select the first interaction to show its visualization
+        if interactions:
+            self.table.setCurrentCell(0, 0)
+            self._on_row_selected(0, 0, -1, -1)
+
     def clear(self):
         self.table.setRowCount(0)
         self.viz_text.clear()
