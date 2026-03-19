@@ -138,6 +138,7 @@ class OligoTree(QWidget):
         super().__init__(parent)
         self._project = project
         self._risk_map = {}
+        self._expanded_state = {}  # key (ROLE_TYPE, ROLE_ID) -> bool
         self._build_ui()
 
     def _build_ui(self):
@@ -152,6 +153,17 @@ class OligoTree(QWidget):
         new_mix_btn = QPushButton("New Mix")
         new_mix_btn.clicked.connect(self._on_new_mix)
         btn_row.addWidget(new_mix_btn)
+
+        btn_row.addStretch()
+
+        collapse_btn = QPushButton("Collapse All")
+        collapse_btn.clicked.connect(self._on_collapse_all)
+        btn_row.addWidget(collapse_btn)
+
+        expand_btn = QPushButton("Expand All")
+        expand_btn.clicked.connect(self._on_expand_all)
+        btn_row.addWidget(expand_btn)
+
         layout.addLayout(btn_row)
 
         self.tree = QTreeWidget()
@@ -175,6 +187,7 @@ class OligoTree(QWidget):
     def set_project(self, project: Project):
         self._project = project
         self._risk_map = {}
+        self._expanded_state = {}
         self.refresh()
 
     def update_risk_highlights(self, risk_map: dict):
@@ -182,11 +195,16 @@ class OligoTree(QWidget):
         self.refresh()
 
     def refresh(self):
-        """Rebuild the tree from the project model, preserving selection."""
+        """Rebuild the tree from the project model, preserving selection and expansion state."""
         # Save current selection
         current = self.tree.currentItem()
         selected_id = current.data(0, ROLE_ID) if current else None
         selected_type = current.data(0, ROLE_TYPE) if current else None
+
+        # Save expansion state
+        for item in self._iterate_top_level_items():
+            key = (item.data(0, ROLE_TYPE), item.data(0, ROLE_ID))
+            self._expanded_state[key] = item.isExpanded()
 
         self.tree.clear()
 
@@ -203,7 +221,7 @@ class OligoTree(QWidget):
 
         for oligo in self._project.get_unallocated_oligos():
             self._add_oligo_item(unalloc_item, oligo)
-        unalloc_item.setExpanded(True)
+        unalloc_item.setExpanded(self._expanded_state.get(("unallocated", None), True))
 
         # Mix sections
         for mix in self._project.mixes:
@@ -219,7 +237,7 @@ class OligoTree(QWidget):
 
             for oligo in self._project.get_oligos_in_mix(mix.id):
                 self._add_oligo_item(mix_item, oligo)
-            mix_item.setExpanded(True)
+            mix_item.setExpanded(self._expanded_state.get(("mix", mix.id), True))
 
         # Restore selection
         self._restore_selection(selected_type, selected_id)
@@ -266,13 +284,29 @@ class OligoTree(QWidget):
                 self.tree.setCurrentItem(item)
                 return
 
+    def _iterate_top_level_items(self):
+        """Yield all top-level items (folders) in the tree."""
+        for i in range(self.tree.topLevelItemCount()):
+            yield self.tree.topLevelItem(i)
+
     def _iterate_all_items(self):
         """Yield all items in the tree."""
-        for i in range(self.tree.topLevelItemCount()):
-            top = self.tree.topLevelItem(i)
+        for top in self._iterate_top_level_items():
             yield top
             for j in range(top.childCount()):
                 yield top.child(j)
+
+    def _on_collapse_all(self):
+        for item in self._iterate_top_level_items():
+            item.setExpanded(False)
+            key = (item.data(0, ROLE_TYPE), item.data(0, ROLE_ID))
+            self._expanded_state[key] = False
+
+    def _on_expand_all(self):
+        for item in self._iterate_top_level_items():
+            item.setExpanded(True)
+            key = (item.data(0, ROLE_TYPE), item.data(0, ROLE_ID))
+            self._expanded_state[key] = True
 
     # ---- drag and drop ----
 
