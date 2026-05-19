@@ -8,13 +8,23 @@ A desktop tool for checking 3' end overlaps between oligonucleotides in multiple
 - PySide6
 - Biopython
 
-Install dependencies:
+## Setup
+
+This project uses [uv](https://docs.astral.sh/uv/). Dependencies and the Python version are declared in `pyproject.toml` / `.python-version`.
 
 ```
-pip install PySide6 biopython
+uv sync
 ```
+
+This creates a `.venv` and installs everything pinned in `uv.lock`. uv will fetch Python 3.12 automatically if it isn't already installed.
 
 ## Running
+
+```
+uv run python main.py
+```
+
+Or, with the venv activated (`.venv\Scripts\activate` on Windows, `source .venv/bin/activate` elsewhere):
 
 ```
 python main.py

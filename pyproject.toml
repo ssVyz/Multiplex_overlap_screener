@@ -1,0 +1,12 @@
+[project]
+name = "multiplex-overlap-screener"
+version = "0.1.0"
+description = "Desktop tool for checking 3' end overlaps between oligonucleotides in multiplex assay designs."
+requires-python = ">=3.12"
+dependencies = [
+    "PySide6",
+    "biopython",
+]
+
+[tool.uv]
+package = false
