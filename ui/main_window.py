@@ -5,7 +5,9 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent
 
 from core.settings import load_settings, save_settings
-from core.analysis import analyze_mix, get_interactions_for_oligo, get_max_risk_for_oligo
+from core.analysis import (
+    MODE_OVERLAP, analyze_mix, get_interactions_for_oligo, get_max_risk_for_oligo,
+)
 from core.models import Project
 from ui.oligo_tree import OligoTree
 from ui.oligo_preview import OligoPreview
@@ -16,7 +18,6 @@ from ui.settings_dialog import SettingsDialog
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Multiplex Assay Overlap Screener")
         self.resize(1200, 800)
 
         self._settings = load_settings()
@@ -29,6 +30,7 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._connect_signals()
         self.oligo_preview.set_settings(self._settings)
+        self._update_title()
 
     def _build_menu(self):
         menu_bar = self.menuBar()
@@ -73,6 +75,15 @@ class MainWindow(QMainWindow):
         self.oligo_tree.oligo_selected.connect(self._on_oligo_selected)
         self.oligo_tree.project_changed.connect(self._on_project_changed)
 
+    def _update_title(self):
+        """Window title carries the project path and the active screening mode."""
+        mode = self._settings.get("screen_mode", MODE_OVERLAP)
+        mode_label = "ΔG" if mode != MODE_OVERLAP else "Overlap"
+        title = f"Multiplex Assay Screener [{mode_label}]"
+        if self._project_path:
+            title = f"{title} — {self._project_path}"
+        self.setWindowTitle(title)
+
     # ---- settings ----
 
     def _open_settings(self):
@@ -82,6 +93,7 @@ class MainWindow(QMainWindow):
             save_settings(self._settings)
             self.oligo_preview.set_settings(self._settings)
             self._analysis_cache.clear()
+            self._update_title()
             self._refresh_current_view()
 
     # ---- project management ----
@@ -102,7 +114,7 @@ class MainWindow(QMainWindow):
         self.oligo_tree.set_project(self._project)
         self.oligo_preview.clear()
         self.detail_panel.clear()
-        self.setWindowTitle("Multiplex Assay Overlap Screener")
+        self._update_title()
 
     def _on_open_project(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -118,7 +130,7 @@ class MainWindow(QMainWindow):
                 self.oligo_tree.set_project(self._project)
                 self.oligo_preview.clear()
                 self.detail_panel.clear()
-                self.setWindowTitle(f"Overlap Screener — {path}")
+                self._update_title()
                 self._refresh_current_view()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to load project:\n{e}")
@@ -143,7 +155,7 @@ class MainWindow(QMainWindow):
                 self._project.save(path)
                 self._project_path = path
                 self._dirty = False
-                self.setWindowTitle(f"Overlap Screener — {path}")
+                self._update_title()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save:\n{e}")
 
@@ -223,7 +235,10 @@ class MainWindow(QMainWindow):
         if oligo.mix_id:
             results = self._run_analysis_for_mix(oligo.mix_id)
             interactions = get_interactions_for_oligo(oligo.id, results)
-            self.detail_panel.show_interactions(oligo.id, oligo.name, interactions)
+            self.detail_panel.show_interactions(
+                oligo.id, oligo.name, interactions,
+                self._settings.get("screen_mode", MODE_OVERLAP),
+            )
         else:
             self.detail_panel.clear()
 

@@ -5,6 +5,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont
 
+from core.analysis import MODE_OVERLAP, MODE_THERMO
+
 
 class DetailPanel(QWidget):
     """Right panel: shows interactions (top) and overlap visualization (bottom)."""
@@ -14,10 +16,17 @@ class DetailPanel(QWidget):
         "MEDIUM": QColor(255, 200, 80, 90),
     }
 
+    # column headers per screening mode; the first and last are shared
+    COLUMNS = {
+        MODE_OVERLAP: ["Partner", "Overlap", "Mismatches", "Risk"],
+        MODE_THERMO: ["Partner", "ΔG 3'", "ΔG worst", "ΔG total", "Risk"],
+    }
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._interactions = []
         self._current_oligo_id = None
+        self._mode = MODE_OVERLAP
         self._build_ui()
 
     def _build_ui(self):
@@ -35,16 +44,11 @@ class DetailPanel(QWidget):
         top_layout.addWidget(self.title_label)
 
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["Partner", "Overlap", "Mismatches", "Risk"])
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setSelectionMode(QTableWidget.SingleSelection)
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.table.currentCellChanged.connect(self._on_row_selected)
+        self._apply_columns(MODE_OVERLAP)
         top_layout.addWidget(self.table)
         splitter.addWidget(top_widget)
 
@@ -67,35 +71,62 @@ class DetailPanel(QWidget):
         splitter.setStretchFactor(1, 1)
         layout.addWidget(splitter)
 
-    def show_interactions(self, oligo_id, oligo_name, interactions):
+    def _apply_columns(self, mode):
+        """Set the table's columns for the given screening mode."""
+        headers = self.COLUMNS[mode]
+        self.table.setColumnCount(len(headers))
+        self.table.setHorizontalHeaderLabels(headers)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        for col in range(1, len(headers)):
+            header.setSectionResizeMode(col, QHeaderView.ResizeToContents)
+
+    def _partner_name(self, r, oligo_id):
+        if r["primer1_id"] == oligo_id and r["primer2_id"] == oligo_id:
+            return f"{r['primer1_name']} (self-dimer)"
+        if r["primer1_id"] == oligo_id:
+            return r["primer2_name"]
+        return r["primer1_name"]
+
+    def _row_values(self, r, oligo_id):
+        """Cell text for one interaction, excluding the trailing risk column."""
+        if self._mode == MODE_THERMO:
+            return [
+                self._partner_name(r, oligo_id),
+                f"{r['dg_3prime']:.1f}",
+                f"{r['dg_min']:.1f}",
+                f"{r['dg_ens']:.1f}",
+            ]
+        return [
+            self._partner_name(r, oligo_id),
+            str(r["overlap_length"]),
+            str(r["mismatches"]),
+        ]
+
+    def show_interactions(self, oligo_id, oligo_name, interactions, mode=MODE_OVERLAP):
         """Populate the table with interactions for the given oligo."""
         self._interactions = interactions
         self._current_oligo_id = oligo_id
+        if mode != self._mode:
+            self._mode = mode
+            self._apply_columns(mode)
         self.title_label.setText(
             f"Interactions for: {oligo_name}" if oligo_name
             else "Select an oligo to view interactions"
+        )
+        self.viz_label.setText(
+            "Duplex Visualization" if mode == MODE_THERMO else "Overlap Visualization"
         )
         self.viz_text.clear()
 
         self.table.setRowCount(len(interactions))
         for row, r in enumerate(interactions):
-            # Determine partner name
-            if r["primer1_id"] == oligo_id and r["primer2_id"] == oligo_id:
-                partner = f"{r['primer1_name']} (self-dimer)"
-            elif r["primer1_id"] == oligo_id:
-                partner = r["primer2_name"]
-            else:
-                partner = r["primer1_name"]
-
-            items = [
-                QTableWidgetItem(partner),
-                QTableWidgetItem(str(r["overlap_length"])),
-                QTableWidgetItem(str(r["mismatches"])),
-                QTableWidgetItem(r["risk_level"]),
-            ]
-
+            values = self._row_values(r, oligo_id) + [r["risk_level"]]
             color = self.RISK_COLORS.get(r["risk_level"])
-            for col, item in enumerate(items):
+            for col, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if col:
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 if color:
                     item.setBackground(color)
                 self.table.setItem(row, col, item)
@@ -112,13 +143,26 @@ class DetailPanel(QWidget):
         self._current_oligo_id = None
         self.title_label.setText("Select an oligo to view interactions")
 
+    def _summary_line(self, r):
+        if self._mode == MODE_THERMO:
+            return (
+                f"ΔG 3' anchored: {r['dg_3prime']:.2f} kcal/mol  "
+                f"({r['primer1_name']} 3': {r['dg_3prime_1']:.2f}, "
+                f"{r['primer2_name']} 3': {r['dg_3prime_2']:.2f})\n"
+                f"ΔG strongest: {r['dg_min']:.2f} kcal/mol  |  "
+                f"ΔG total (ensemble): {r['dg_ens']:.2f} kcal/mol  "
+                f"over {r['n_structures']} structures  |  "
+                f"Risk: {r['risk_level']}"
+            )
+        return (
+            f"Overlap: {r['overlap_length']} bp  |  "
+            f"Mismatches: {r['mismatches']}  |  "
+            f"Risk: {r['risk_level']}"
+        )
+
     def _on_row_selected(self, row, _col, _prev_row, _prev_col):
         if 0 <= row < len(self._interactions):
             r = self._interactions[row]
-            text = (
-                f"Overlap: {r['overlap_length']} bp  |  "
-                f"Mismatches: {r['mismatches']}  |  "
-                f"Risk: {r['risk_level']}\n\n"
-                f"{r['visualization']}"
+            self.viz_text.setPlainText(
+                f"{self._summary_line(r)}\n\n{r['visualization']}"
             )
-            self.viz_text.setPlainText(text)

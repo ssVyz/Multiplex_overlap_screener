@@ -2,31 +2,15 @@ from Bio.Seq import Seq
 from Bio import SeqIO
 from io import StringIO
 
-# IUPAC ambiguity codes — maps each code to its possible bases
-IUPAC_CODES = {
-    "A": {"A"},
-    "C": {"C"},
-    "G": {"G"},
-    "T": {"T"},
-    "R": {"A", "G"},
-    "Y": {"C", "T"},
-    "S": {"G", "C"},
-    "W": {"A", "T"},
-    "K": {"G", "T"},
-    "M": {"A", "C"},
-    "B": {"C", "G", "T"},
-    "D": {"A", "G", "T"},
-    "H": {"A", "C", "T"},
-    "V": {"A", "C", "G"},
-    "N": {"A", "C", "G", "T"},
-}
+from core.sequtils import (  # noqa: F401
+    IUPAC_CODES, bases_could_match, bases_could_pair, duplex_bases_pair,
+)
+from core.thermo import model_from_settings
 
-
-def bases_could_match(base1, base2):
-    """Check if two bases could match considering IUPAC ambiguity codes."""
-    bases1 = IUPAC_CODES.get(base1.upper(), {base1.upper()})
-    bases2 = IUPAC_CODES.get(base2.upper(), {base2.upper()})
-    return bool(bases1 & bases2)
+# Screening modes. OVERLAP is the original 3' end overlap scan; THERMO scores
+# every gapless register by nearest-neighbor free energy (see core/thermo.py).
+MODE_OVERLAP = "overlap"
+MODE_THERMO = "thermo"
 
 
 def count_mismatches(seq1, seq2, consider_ambiguity=False):
@@ -52,6 +36,26 @@ def get_risk_level(overlap_length, mismatches, settings):
         return "LOW"
 
 
+def get_thermo_risk_level(dg_3prime, dg_min, settings):
+    """Determine risk level from free energies.
+
+    3' anchored stability is checked first because only 3' paired structures can
+    be extended by polymerase; a very stable internal duplex still counts, via
+    the separate dg_min thresholds.
+    """
+    high_3p = settings.get("high_risk_dg_3prime", -6.0)
+    high_any = settings.get("high_risk_dg_any", -10.0)
+    med_3p = settings.get("medium_risk_dg_3prime", -4.0)
+    med_any = settings.get("medium_risk_dg_any", -7.0)
+
+    if dg_3prime <= high_3p or dg_min <= high_any:
+        return "HIGH"
+    elif dg_3prime <= med_3p or dg_min <= med_any:
+        return "MEDIUM"
+    else:
+        return "LOW"
+
+
 def get_last_n_bases(sequence, n):
     """Get last n bases from 3' end of a sequence string."""
     return sequence[-n:].upper()
@@ -63,40 +67,64 @@ def get_last_n_bases_rc(sequence, n):
     return str(trimmed.reverse_complement())
 
 
+def visualize_duplex(oligo1, oligo2, offset, helix_start, helix_end,
+                     consider_ambiguity=False):
+    """ASCII view of two oligos held in duplex at a given register.
+
+    oligo2 is drawn reversed so it reads 3'->5' left to right. `offset` places
+    it against oligo1: base k of the reversed oligo2 sits under base k + offset
+    of oligo1. `helix_start`/`helix_end` mark the paired span in oligo1
+    coordinates, and only that span is annotated with pairing bars.
+    """
+    seq1 = oligo1.sequence
+    seq2_rev = oligo2.sequence[::-1]
+
+    pad = max(0, -offset)  # shift right when oligo2 overhangs oligo1's 5' end
+
+    lines = [f"5'-{' ' * pad}{seq1}-3'  ({oligo1.name})"]
+
+    match_line = "   " + " " * (pad + helix_start)
+    for col in range(helix_start, helix_end + 1):
+        k = col - offset
+        bottom = seq2_rev[k] if 0 <= k < len(seq2_rev) else None
+        paired = bottom is not None and duplex_bases_pair(
+            seq1[col], bottom, consider_ambiguity)
+        match_line += "|" if paired else " "
+    lines.append(match_line)
+
+    lines.append(f"3'-{' ' * (pad + offset)}{seq2_rev}-5'  ({oligo2.name})")
+
+    return "\n".join(lines)
+
+
 def visualize_overlap(oligo1, oligo2, overlap_length, consider_ambiguity=False):
     """Create ASCII visualization of the 3' overlap between two oligos.
 
     oligo1/oligo2 must have .sequence and .name attributes.
     """
-    primer1_full = oligo1.sequence
-    primer2_full = oligo2.sequence
-
-    p2_offset = len(primer1_full) - overlap_length
-
-    primer1_3end = get_last_n_bases(oligo1.sequence, overlap_length)
-    primer2_3end_rc = get_last_n_bases_rc(oligo2.sequence, overlap_length)
-
-    lines = []
-    lines.append(f"5'-{primer1_full}-3'  ({oligo1.name})")
-
-    match_line = "   " + " " * p2_offset
-    for a, b in zip(primer1_3end, primer2_3end_rc):
-        if consider_ambiguity:
-            match_line += "|" if bases_could_match(a, b) else " "
-        else:
-            match_line += "|" if a == b else " "
-    lines.append(match_line)
-
-    primer2_reversed = primer2_full[::-1]
-    lines.append(f"3'-{' ' * p2_offset}{primer2_reversed}-5'  ({oligo2.name})")
-
-    return "\n".join(lines)
+    # A 3' overlap is the register where both 3' ends meet, i.e. the reversed
+    # oligo2 starts where oligo1's terminal `overlap_length` bases begin.
+    offset = len(oligo1.sequence) - overlap_length
+    return visualize_duplex(
+        oligo1, oligo2, offset, offset, len(oligo1.sequence) - 1,
+        consider_ambiguity,
+    )
 
 
 def analyze_mix(oligos, settings):
-    """Run pairwise 3' overlap analysis on a list of Oligo objects.
+    """Run pairwise analysis on a list of Oligo objects, dispatching on mode.
 
-    Each oligo must have .id, .name, and .sequence attributes.
+    Each oligo must have .id, .name, and .sequence attributes. Both modes return
+    a list of dicts sharing the keys primer1_id, primer2_id, primer1_name,
+    primer2_name, risk_level and visualization; the remaining keys differ.
+    """
+    if settings.get("screen_mode", MODE_OVERLAP) == MODE_THERMO:
+        return analyze_mix_thermo(oligos, settings)
+    return analyze_mix_overlap(oligos, settings)
+
+
+def analyze_mix_overlap(oligos, settings):
+    """Run pairwise 3' overlap analysis on a list of Oligo objects.
 
     Returns a list of result dicts, each containing:
         overlap_length, mismatches, primer1_id, primer2_id,
@@ -142,6 +170,65 @@ def analyze_mix(oligos, settings):
                             "visualization": vis,
                         })
 
+    return results
+
+
+def analyze_mix_thermo(oligos, settings):
+    """Score every oligo pair by nearest-neighbor free energy.
+
+    Unlike the overlap mode this emits one row per pair (self-pairs included),
+    each carrying dg_min, dg_ens and dg_3prime. Pairs whose interaction is
+    weaker than both reporting thresholds are omitted.
+
+    Returns a list of result dicts, each containing:
+        dg_min, dg_ens, dg_3prime, dg_3prime_1, dg_3prime_2, n_structures,
+        primer1_id, primer2_id, primer1_name, primer2_name, risk_level,
+        visualization
+    """
+    if len(oligos) < 2:
+        return []
+
+    model = model_from_settings(settings)
+    consider_ambiguity = settings.get("consider_ambiguity", False)
+    report_dg_min = settings.get("report_dg_min", -2.0)
+    report_dg_ens = settings.get("report_dg_ens", -3.0)
+
+    results = []
+
+    for i in range(len(oligos)):
+        for j in range(i, len(oligos)):
+            oligo_i = oligos[i]
+            oligo_j = oligos[j]
+
+            r = model.pair_interaction(oligo_i.sequence, oligo_j.sequence)
+            if r["n_structures"] == 0:
+                continue
+            # either filter alone is enough to surface the pair
+            if r["dg_min"] > report_dg_min and r["dg_ens"] > report_dg_ens:
+                continue
+
+            risk = get_thermo_risk_level(r["dg_3prime"], r["dg_min"], settings)
+            vis = visualize_duplex(
+                oligo_i, oligo_j, r["offset"], r["helix_start"], r["helix_end"],
+                consider_ambiguity,
+            )
+
+            results.append({
+                "dg_min": r["dg_min"],
+                "dg_ens": r["dg_ens"],
+                "dg_3prime": r["dg_3prime"],
+                "dg_3prime_1": r["dg_3prime_1"],
+                "dg_3prime_2": r["dg_3prime_2"],
+                "n_structures": r["n_structures"],
+                "primer1_id": oligo_i.id,
+                "primer2_id": oligo_j.id,
+                "primer1_name": oligo_i.name,
+                "primer2_name": oligo_j.name,
+                "risk_level": risk,
+                "visualization": vis,
+            })
+
+    results.sort(key=lambda r: (r["dg_3prime"], r["dg_min"]))
     return results
 
 
