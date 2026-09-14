@@ -9,11 +9,11 @@
     "medium_risk_min_overlap": 4,
     "medium_risk_max_mismatches": 1,
     "na_concentration": 150.0,
-    "dg_temperature": 37.0,
-    "report_dg_min": -2.0,
-    "report_dg_ens": -3.0,
-    "high_risk_dg_3prime": -6.0,
-    "high_risk_dg_any": -10.0,
-    "medium_risk_dg_3prime": -4.0,
-    "medium_risk_dg_any": -7.0
+    "dg_temperature": 60.0,
+    "report_dg_min": -1.5,
+    "report_dg_ens": -2.0,
+    "high_risk_dg_3prime": -5.0,
+    "high_risk_dg_any": -7.0,
+    "medium_risk_dg_3prime": -2.5,
+    "medium_risk_dg_any": -4.0
 }
